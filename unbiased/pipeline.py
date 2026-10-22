@@ -1,9 +1,11 @@
 """One event, end to end: questions, then sources per question, then verbatim elements per primary source,
 then a coverage number per question. Every agent decision is traced in the runs and trace_events tables."""
+import re
 import threading
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 
-from . import agent, config, db, templates
+from . import agent, config, db, keenable, templates
 
 TRUTH_KINDS = ["authored_statement", "administrative_record", "measured_count", "recording", "none"]
 CLASSES = ["primary", "secondary", "opinion"]
@@ -162,10 +164,35 @@ def source_elements(ev, q, sid, s):
     prompt = templates.render("elements", question=q["text"], url=s["url"], holder=s["holder"], **_ev(ev))
     answer, run_id = agent.run("elements", sid, config.EXTRACT_MODEL, SYSTEM, prompt, agent.web_tools(),
                                ELEMENTS_SCHEMA, effort="medium")
+    page = _page_text(s["url"])
+    kept = 0
     for e in answer["elements"][:6]:
-        if e["verbatim"].strip():
-            db.add_element(sid, q["id"], e, run_id)
-    return len(answer["elements"])
+        v = e["verbatim"].strip()
+        if not v:
+            continue
+        if page is not None and _norm(v) not in page:
+            continue  # not a verbatim substring of the page: never store a paraphrase
+        if page is None:
+            e = {**e, "note": ("page could not be re-fetched to verify. " + e.get("note", "")).strip()}
+        db.add_element(sid, q["id"], e, run_id)
+        kept += 1
+    return kept
+
+
+def _norm(text):
+    text = unicodedata.normalize("NFKC", text or "")
+    for a, b in (("\u2019", "'"), ("\u2018", "'"), ("\u201c", '"'), ("\u201d", '"'), ("\u00ab", '"'), ("\u00bb", '"'), ("\u00a0", " ")):
+        text = text.replace(a, b)
+    text = re.sub(r"[*_`#>\[\]]", "", text)
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def _page_text(url):
+    """The page as Keenable returns it, normalised, to check that every element is a verbatim substring."""
+    try:
+        return _norm(keenable.fetch(url, max_chars=100000).get("content") or "") or None
+    except Exception:
+        return None
 
 
 def tree(eid):

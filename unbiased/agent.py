@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import anthropic
 
-from . import db, keenable
+from . import config, db, keenable
 
 _client = None
 
@@ -16,7 +16,6 @@ def client():
         _client = anthropic.Anthropic()
     return _client
 
-MAX_TURNS = 40
 TRACE_RESULT_CHARS = 4000
 
 
@@ -79,7 +78,7 @@ def run(kind, subject_id, model, system, prompt, tools, output_schema, effort="m
     messages = [{"role": "user", "content": prompt}]
     event("prompt", {"system": system, "prompt": prompt})
     try:
-        for _ in range(MAX_TURNS):
+        for _ in range(config.MAX_TURNS):
             response = client().beta.messages.create(
                 model=model,
                 max_tokens=16000,
@@ -125,7 +124,7 @@ def run(kind, subject_id, model, system, prompt, tools, output_schema, effort="m
                     for b, (content, is_error) in zip(calls, results)
                 ],
             })
-        raise AgentError(f"no answer after {MAX_TURNS} turns")
+        raise AgentError(f"no answer after {config.MAX_TURNS} turns")
     except Exception as e:
         event("error", {"error": repr(e)})
         db.finish_run(run_id, "failed", usage, repr(e))

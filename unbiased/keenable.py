@@ -27,7 +27,7 @@ def search(query, published_after=None, max_results=10, mode="pro"):
     ]
 
 
-def fetch(url, prompt=None, max_chars=20000):
+def fetch(url, prompt=None, max_chars=config.FETCH_MAX_CHARS):
     params = {"url": url, "max_chars": max_chars}
     if prompt:
         params["prompt"] = prompt

@@ -59,6 +59,8 @@ def connect():
         import psycopg
         from psycopg.rows import dict_row
         with psycopg.connect(config.DATABASE_URL, row_factory=dict_row, autocommit=True) as conn:
+            if config.DB_SCHEMA:
+                conn.execute(f'SET search_path TO "{config.DB_SCHEMA}"')
             yield conn
     else:
         with _lock:
@@ -77,6 +79,8 @@ def _q(sql):
 
 def init():
     with connect() as conn:
+        if PG and config.DB_SCHEMA:
+            conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{config.DB_SCHEMA}"')
         for stmt in SCHEMA:
             conn.execute(stmt)
 
